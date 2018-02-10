@@ -1,0 +1,311 @@
+---
+title: "The Data Science Capstone"
+Author: "Farhan Choudhary"
+date: "7th February, 2018"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In the current segment we shall perform a general getting and cleaning of data, then we will move on to preparing the data for exploratory data analysis and perform some quick and dirty summary to understand the original data.
+
+The project uses a large text corpus of documents to predict the next word on preceding input. The data, once prepared, will act as an input to the Shiny Web App and see how the predictive model functions.
+
+## Prequisite Libraries (to be imported)
+
+Note: Kindly install these if you want to reproduce the application.
+
+```{r, echo=TRUE}
+library(stringi) 
+#library(NLP); library(openNLP)
+library(tm) # Required for text mining & cleaning operations
+#library(rJava) # this is loaded as a part of openNLP
+#library(RWeka) # Used to create n-Grams (unigrams, bigrams, trigrams etc.)
+#library(RWekajars)
+library(SnowballC) # To create the final corpus
+library(RColorBrewer) # Graphics & Color Pallettes 
+#library(qdap) # To bridge quantitative and qualitative aspects of data
+library(ggplot2) # You know what this is for
+
+```
+
+## Quick Peek into the Data Set
+
+The data is from HC Corpora with access to 4 languages, but only English will be used. The dataset has the following three files.
+
+ * en_US.blogs.txt
+ * en_US.news.txt
+ * en_US.twitter.txt.
+
+#### Please Note: I had already downloaded the data set to my local drive and I will be using the data from the drive itself, not with the web link download in R (as it is time consuming).
+
+Before setting up the necessary data frames, set the working directory and change the global output options to avoid confusion. 
+
+Feel free to train the model in other languages as well.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+blogsURL <- file("en_US.blogs.txt", open="rb") # open for reading in binary mode
+blog <- readLines(blogsURL, encoding = "UTF-8", skipNul=TRUE)
+
+newsURL <- file("en_US.news.txt", open = "rb") # open for reading in binary mode
+news <- readLines(newsURL, encoding = "UTF-8", skipNul=TRUE)
+
+twitterURL <- file("en_US.twitter.txt", open = "rb") # open for reading in binary mode
+twit <- readLines(twitterURL, encoding = "UTF-8", skipNul=TRUE)
+```
+
+## Quick and Dirty Stats
+
+Here you'll find some general information about the files used.
+
+```{r, echo=TRUE}
+## Size of Files
+file.info("en_US.blogs.txt")$size / 1024^2 # Megabytes
+file.info("en_US.news.txt")$size  / 1024^2 # Megabytes
+file.info("en_US.twitter.txt")$size / 1024^2 # Megabytes
+
+## Number of lines
+length(blog) # 899,288 lines
+length(news)  # 1,010,242 lines
+length(twit) # 2,360,148
+
+## Counting the Words
+sum(stri_count_words(blog)) # words at blogs = 37,546,246
+sum(stri_count_words(news))  # words at news =  34,762,395
+sum(stri_count_words(twit)) # words at twitter = 30,093,410
+
+## The length of the longest line seen in any of the three en_US data sets: (question 3 of Quiz 1)
+max(nchar(blog)) # [1] 40,833
+max(nchar(news))  # [1] 11,384 
+max(nchar(twit)) # [1] 140
+```
+
+So far, we made a table of raw data stats using only base functions (i.e. no dependencies)
+
+## Exploratory Data Analysis
+ 
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+set.seed(123)
+blog10 <- sample(blog, size = length(blog) / 10, replace = FALSE)
+news10 <- sample(news, size = length(news)/10, replace = FALSE)
+twit10 <- sample(twit, size = length(twit) / 10, replace = FALSE)
+```
+
+### Basic File Statistics
+
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+blog10MB <- format(object.size(blog10), standard = "IEC", units = "MiB")
+news10MB <- format(object.size(news10), standard = "IEC", units = "MiB")
+twit10MB <- format(object.size(twit10), standard = "IEC", units = "MiB")
+
+## Get the number of lines
+blog10Lines <- length(blog10)
+news10Lines <- length(news10)
+twit10Lines <- length(twit10)
+
+
+## Get the number of words per line using sapply and gregexpr base functions
+blog10Words<-sapply(gregexpr("[[:alpha:]]+", blog10), function(x) sum(x > 0))
+news10Words<-sapply(gregexpr("[[:alpha:]]+", news10), function(x) sum(x > 0))
+twit10Words<-sapply(gregexpr("[[:alpha:]]+", twit10), function(x) sum(x > 0))
+
+## Sum the number of words in each line to get total words
+blog10WordsSum<-sum(blog10Words)
+news10WordsSum<-sum(news10Words)
+twit10WordsSum<-sum(twit10Words)
+
+##Get the character count (per line) for each data set
+blog10Char<-nchar(blog10, type = "chars")
+news10Char<-nchar(news10, type = "chars")
+twit10Char<-nchar(twit10, type = "chars")
+
+##Sum the character counts to get total number of characters
+blog10CharSum<-sum(blog10Char)
+news10CharSum<-sum(news10Char)
+twit10CharSum<-sum(twit10Char)
+
+## Alternative: Use the Unix command wc e.g. system("wc filepath")
+## This will give the lines, words and characters.
+## For simple things like these, I trust Unix commands > R base functions > R packages :)
+```
+### Statistics Table
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+df10 <- data.frame(File=c("Blogs Sample", "News Sample", "Twitter Sample"),
+               fileSize = c(blog10MB, news10MB, twit10MB),
+               lineCount = c(blog10Lines, news10Lines, twit10Lines),
+               wordCount = c(blog10WordsSum, news10WordsSum, twit10WordsSum),
+               charCount = c(blog10CharSum,news10CharSum,twit10CharSum),
+               wordMean = c(mean(blog10Words), mean(news10Words), mean(twit10Words)),
+               charMean = c(mean(blog10Char), mean(news10Char), mean(twit10Char))
+               )
+
+View(df10)
+```
+
+## Cleaning the Data
+To create a cleaned corpus, following steps are involved: (in no particular order)
+
+1. Load the data
+2. Split by whitespaces or strip extra white spaces
+3. Use regular expressions for words
+4. Remove punctuations
+5. Normalize the cases of text i.e. upper/lower case
+6. Filter out stop words
+7. Stem the data
+8. (Optional) Remove profanity words
+
+Profanity Words list is from Luis von Ahn's research group at CMU (http://www.cs.cmu.edu/~biglou/resources/).
+
+The library used here is TM that loads the corpus into memory and allow calls to the methods to clean the data.
+### Bringing all datasets together
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+#install.packages("tm")
+library(tm)
+## Put all of the data samples together
+#dat<- c(blog,news,twit)
+dat10<- c(blog10,news10,twit10)
+```
+
+### Remove stop words, multiple spaces and punctuation
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+dat10NoPunc<- removePunctuation(dat10)
+dat10NoWS<- stripWhitespace(dat10NoPunc)
+dat10NoStop <- removeWords(dat10NoWS, stopwords("english"))
+```
+### Remove profanity words
+The profanity words can be found in the following github repositories
+https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/blob/master/en
+and https://gist.github.com/jamiew/1112488
+
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+##Read in profanity word lists
+profan1<- as.character(read.csv("profan1.csv", header=FALSE))
+profan2<- as.character(row.names(read.csv("profan2.csv", header=TRUE, sep = ":")))
+## Put the two lists together
+profan<-c(profan1, profan2)
+## Trim the first and last line of profan dataset
+profan<-profan[-1]
+profan<-profan[-length(profan)]
+## Remove profanity
+dat10NoProfan <- removeWords(dat10NoStop, profan) 
+
+## Find out the object size difference after removing profanity
+object.size(dat10NoPunc)
+object.size(dat10NoProfan)
+object.size(dat10NoPunc)-object.size(dat10NoProfan)
+```
+
+## Remove Special ASCII Characters
+### e.g "â", "o", "î", "z","???","T","³","ð","¾","ñ", "~"...
+
+#### Convert everything to lowercase 
+
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+library(stringi)
+dat10Lower <- stri_trans_tolower(dat10NoProfan)
+```
+
+#### Remove special symbols using RegEx
+
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+dat10azONLY <- gsub("ð|â|???|T|o|'|³|¾|ñ|f|.|º|°|»|²|¼|>|<|¹|·|¸|¦|~|~", "", dat10Lower) 
+```
+#### Remove one-letter words
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+dat10NoPunc2<- removePunctuation(dat10azONLY)
+dat10NoWS2<- stripWhitespace(dat10NoPunc2)
+#Remove single letter words
+dat10NoShort <- removeWords(dat10NoWS2, "\\b\\w{1}\\b") 
+```
+
+## Tokenization
+Here I put together lists of unigrams, bigrams and trigrams.
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+## I was initially using the RWeka package, but it was giving me a runtime error, therefore imported an entirely different tokenizer program since Java was not working even after manually setting up the system environment
+## Created by Maciej Szymkiewicz, aka zero323 on Github.
+
+# https://raw.githubusercontent.com/zero323/r-snippets/master/R/ngram_tokenizer.R
+source("ngram_Tokenizer.R")
+unigram_tokenizer <- ngram_tokenizer(1)
+uniList <- unigram_tokenizer(dat10NoShort)
+freqNames <- as.vector(names(table(unlist(uniList))))
+freqCount <- as.numeric(table(unlist(uniList)))
+dfUni <- data.frame(Word = freqNames,
+                    Count = freqCount)
+attach(dfUni)
+dfUniSort<-dfUni[order(-Count),]
+detach(dfUni)
+
+bigram_tokenizer <- ngram_tokenizer(2)
+biList <- bigram_tokenizer(dat10NoShort)
+freqNames <- as.vector(names(table(unlist(biList))))
+freqCount <- as.numeric(table(unlist(biList)))
+dfBi <- data.frame(Word = freqNames,
+                    Count = freqCount)
+attach(dfBi)
+dfBiSort<-dfBi[order(-Count),]
+detach(dfBi)
+
+trigram_tokenizer <- ngram_tokenizer(3)
+triList <- trigram_tokenizer(dat10NoShort)
+freqNames <- as.vector(names(table(unlist(triList))))
+freqCount <- as.numeric(table(unlist(triList)))
+dfTri <- data.frame(Word = freqNames,
+                    Count = freqCount)
+attach(dfTri)
+dfTriSort<-dfTri[order(-Count),]
+detach(dfTri)
+```
+
+## Data Visualization
+
+### Unigram histogram
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+par(mar = c(8,4,1,1) + 0.1, las = 2)
+barplot(dfUniSort[1:20,2],col="blue",
+        names.arg = dfUniSort$Word[1:20],srt = 45,
+        space=0.1, xlim=c(0,20),
+        main = "Top 20 Unigrams by Frequency",
+        cex.names = 1, xpd = FALSE)
+```
+### Bigram histogram
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+par(mar = c(8,4,1,1) + 0.1, las = 2)
+barplot(dfBiSort[1:20,2],col="green",
+        names.arg = dfBiSort$Word[1:20],srt = 45,
+        space=0.1, xlim=c(0,20),
+        main = "Top 20 Bigrams by Frequency",
+        cex.names = 1, xpd = FALSE)
+```
+### Trigram histogram
+```{r echo=TRUE, eval=TRUE, warning=FALSE, error=FALSE}
+par(mar = c(8,4,1,1) + 0.1, las = 2)
+barplot(dfTriSort[1:20,2],col="red",
+        names.arg = dfTriSort$Word[1:20],srt = 45,
+        space=0.1, xlim=c(0,20),
+        main = "Top 20 Trigrams by Frequency",
+        cex.names = 1, xpd = FALSE)
+?barplot
+```
+
+### Considerations 
+
+* All the process from reading the file, cleaning and creating the n-grams is time-consuming for your computer.
+* NLP uses intensive computer resource and is necessary a lot of tests get n-grams efficient keeping minimum files sizes.
+* The techniques of removing words (cleaning) sometimes is not precise as we can suppose.
+* Increasing the quality of n-gram tokenization could be critical to prediction accuracy at the prediction algorithm.
+
+### Next Steps
+
+* Build a Shiny app to allow the user input the word to obtain a suggestion of the next word. 
+* Develop the prediction algorithm implemented in Shiny app. 
+* Prepare a pitch about the app and publish it at "shinyapps.io" server.
+
+### Session Info
+
+sessionInfo()
